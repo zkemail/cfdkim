@@ -283,7 +283,10 @@ pub async fn verify_email<'a>(
     verify_email_with_resolver(logger, from_domain, email, resolver).await
 }
 
-pub fn canonicalize_signed_email(email_bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>), DKIMError> {
+// Return (canonicalized_header, canonicalized_body, signature bytes (not base64))
+pub fn canonicalize_signed_email(
+    email_bytes: &[u8],
+) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), DKIMError> {
     let email = mailparse::parse_mail(email_bytes).expect("fail to parse the email bytes");
     let h = email
         .headers
@@ -291,8 +294,11 @@ pub fn canonicalize_signed_email(email_bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>
         .expect("No DKIM-Signature header");
     let value = String::from_utf8_lossy(h.get_value_raw());
     let dkim_header = validate_header(&value)?;
-    // Select the signature corresponding to the email sender
-    let signing_domain = dkim_header.get_required_tag("d");
+    let signature_raw = general_purpose::STANDARD
+        .decode(dkim_header.get_required_tag("b"))
+        .map_err(|err| {
+            DKIMError::SignatureSyntaxError(format!("failed to decode signature: {}", err))
+        })?;
     let (header_canonicalization_type, body_canonicalization_type) =
         parser::parse_canonicalization(dkim_header.get_tag("c"))?;
     let body = get_body(&email)?;
@@ -328,7 +334,7 @@ pub fn canonicalize_signed_email(email_bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>
     //     return Err(DKIMError::BodyHashDidNotVerify);
     // }
 
-    Ok((canonicalized_header, canonicalized_body))
+    Ok((canonicalized_header, canonicalized_body, signature_raw))
 }
 
 #[cfg(test)]
