@@ -1,7 +1,7 @@
 use base64::engine::general_purpose;
 use base64::Engine;
 use ed25519_dalek::ExpandedSecretKey;
-use rsa::Pkcs1v15Sign;
+use rsa;
 use sha1::Sha1;
 use sha2::Sha256;
 
@@ -166,8 +166,12 @@ impl<'a> Signer<'a> {
             DkimPrivateKey::Rsa(private_key) => private_key
                 .sign(
                     match &self.hash_algo {
-                        hash::HashAlgo::RsaSha1 => Pkcs1v15Sign::new::<Sha1>(),
-                        hash::HashAlgo::RsaSha256 => Pkcs1v15Sign::new::<Sha256>(),
+                        hash::HashAlgo::RsaSha1 => rsa::PaddingScheme::PKCS1v15Sign {
+                            hash: Some(rsa::Hash::SHA1),
+                        },
+                        hash::HashAlgo::RsaSha256 => rsa::PaddingScheme::PKCS1v15Sign {
+                            hash: Some(rsa::Hash::SHA2_256),
+                        },
                         hash => {
                             return Err(DKIMError::UnsupportedHashAlgorithm(format!("{:?}", hash)))
                         }

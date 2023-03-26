@@ -2,8 +2,8 @@
 
 use base64::engine::general_purpose;
 use base64::Engine;
+use hash::canonicalize_header_email;
 use indexmap::map::IndexMap;
-use rsa::Pkcs1v15Sign;
 use rsa::PublicKey;
 use rsa::RsaPrivateKey;
 use rsa::RsaPublicKey;
@@ -32,6 +32,8 @@ mod result;
 mod roundtrip_test;
 mod sign;
 
+use crate::canonicalization::*;
+use crate::hash::get_body;
 pub use errors::DKIMError;
 use header::{DKIMHeader, HEADER, REQUIRED_TAGS};
 pub use parser::tag_list as parse_tag_list;
@@ -144,8 +146,12 @@ fn verify_signature(
         DkimPublicKey::Rsa(public_key) => public_key
             .verify(
                 match hash_algo {
-                    hash::HashAlgo::RsaSha1 => Pkcs1v15Sign::new::<Sha1>(),
-                    hash::HashAlgo::RsaSha256 => Pkcs1v15Sign::new::<Sha256>(),
+                    hash::HashAlgo::RsaSha1 => rsa::PaddingScheme::PKCS1v15Sign {
+                        hash: Some(rsa::Hash::SHA1),
+                    },
+                    hash::HashAlgo::RsaSha256 => rsa::PaddingScheme::PKCS1v15Sign {
+                        hash: Some(rsa::Hash::SHA2_256),
+                    },
                     hash => return Err(DKIMError::UnsupportedHashAlgorithm(format!("{:?}", hash))),
                 },
                 &header_hash,
@@ -275,6 +281,54 @@ pub async fn verify_email<'a>(
     let resolver = dns::from_tokio_resolver(resolver);
 
     verify_email_with_resolver(logger, from_domain, email, resolver).await
+}
+
+pub fn canonicalize_signed_email(email_bytes: &[u8]) -> Result<(Vec<u8>, Vec<u8>), DKIMError> {
+    let email = mailparse::parse_mail(email_bytes).expect("fail to parse the email bytes");
+    let h = email
+        .headers
+        .get_first_header(HEADER)
+        .expect("No DKIM-Signature header");
+    let value = String::from_utf8_lossy(h.get_value_raw());
+    let dkim_header = validate_header(&value)?;
+    // Select the signature corresponding to the email sender
+    let signing_domain = dkim_header.get_required_tag("d");
+    let (header_canonicalization_type, body_canonicalization_type) =
+        parser::parse_canonicalization(dkim_header.get_tag("c"))?;
+    let body = get_body(&email)?;
+    let canonicalized_body = if body_canonicalization_type == canonicalization::Type::Simple {
+        canonicalize_body_simple(&body)
+    } else {
+        canonicalize_body_relaxed(&body)
+    };
+    let canonicalized_header = canonicalize_header_email(
+        header_canonicalization_type,
+        &dkim_header.get_required_tag("h"),
+        &dkim_header,
+        &email,
+    )?;
+
+    // let hash_algo = parser::parse_hash_algo(&dkim_header.get_required_tag("a"))?;
+    // let computed_body_hash = hash::compute_body_hash(
+    //     body_canonicalization_type.clone(),
+    //     dkim_header.get_tag("l"),
+    //     hash_algo.clone(),
+    //     &email,
+    // )?;
+    // let computed_headers_hash = hash::compute_headers_hash(
+    //     logger,
+    //     header_canonicalization_type.clone(),
+    //     &dkim_header.get_required_tag("h"),
+    //     hash_algo.clone(),
+    //     &dkim_header,
+    //     &email,
+    // )?;
+    // let header_body_hash = dkim_header.get_required_tag("bh");
+    // if header_body_hash != computed_body_hash {
+    //     return Err(DKIMError::BodyHashDidNotVerify);
+    // }
+
+    Ok((canonicalized_header, canonicalized_body))
 }
 
 #[cfg(test)]
