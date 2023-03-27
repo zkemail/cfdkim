@@ -45,7 +45,7 @@ const SIGN_EXPIRATION_DRIFT_MINS: i64 = 15;
 const DNS_NAMESPACE: &str = "_domainkey";
 
 #[derive(Debug)]
-pub(crate) enum DkimPublicKey {
+pub enum DkimPublicKey {
     Rsa(RsaPublicKey),
     Ed25519(ed25519_dalek::PublicKey),
 }
@@ -314,27 +314,32 @@ pub fn canonicalize_signed_email(
         &email,
     )?;
 
-    // let hash_algo = parser::parse_hash_algo(&dkim_header.get_required_tag("a"))?;
-    // let computed_body_hash = hash::compute_body_hash(
-    //     body_canonicalization_type.clone(),
-    //     dkim_header.get_tag("l"),
-    //     hash_algo.clone(),
-    //     &email,
-    // )?;
-    // let computed_headers_hash = hash::compute_headers_hash(
-    //     logger,
-    //     header_canonicalization_type.clone(),
-    //     &dkim_header.get_required_tag("h"),
-    //     hash_algo.clone(),
-    //     &dkim_header,
-    //     &email,
-    // )?;
-    // let header_body_hash = dkim_header.get_required_tag("bh");
-    // if header_body_hash != computed_body_hash {
-    //     return Err(DKIMError::BodyHashDidNotVerify);
-    // }
-
     Ok((canonicalized_header, canonicalized_body, signature_raw))
+}
+
+pub async fn resolve_public_key(
+    logger: &slog::Logger,
+    email_bytes: &[u8],
+) -> Result<DkimPublicKey, DKIMError> {
+    let email = mailparse::parse_mail(email_bytes).expect("fail to parse the email bytes");
+    let h = email
+        .headers
+        .get_first_header(HEADER)
+        .expect("No DKIM-Signature header");
+    let value = String::from_utf8_lossy(h.get_value_raw());
+    let dkim_header = validate_header(&value)?;
+    let resolver = TokioAsyncResolver::tokio_from_system_conf().map_err(|err| {
+        DKIMError::UnknownInternalError(format!("failed to create DNS resolver: {}", err))
+    })?;
+    let resolver = dns::from_tokio_resolver(resolver);
+    let public_key = public_key::retrieve_public_key(
+        logger,
+        Arc::clone(&resolver),
+        dkim_header.get_required_tag("d"),
+        dkim_header.get_required_tag("s"),
+    )
+    .await?;
+    Ok(public_key)
 }
 
 #[cfg(test)]
