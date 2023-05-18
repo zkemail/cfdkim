@@ -135,6 +135,29 @@ fn validate_header(value: &str) -> Result<DKIMHeader, DKIMError> {
     Ok(header)
 }
 
+fn get_header_unchecked(value: &str) -> Result<DKIMHeader, DKIMError> {
+    let (_, tags) =
+        parser::tag_list(value).map_err(|err| DKIMError::SignatureSyntaxError(err.to_string()))?;
+
+    // Check presence of required tags
+    {
+        let mut tag_names: HashSet<String> = HashSet::new();
+        for tag in &tags {
+            tag_names.insert(tag.name.clone());
+        }
+    }
+
+    let mut tags_map = IndexMap::new();
+    for tag in &tags {
+        tags_map.insert(tag.name.clone(), tag.clone());
+    }
+    let header = DKIMHeader {
+        tags: tags_map,
+        raw_bytes: value.to_owned(),
+    };
+    Ok(header)
+}
+
 // https://datatracker.ietf.org/doc/html/rfc6376#section-6.1.3 Step 4
 fn verify_signature(
     hash_algo: hash::HashAlgo,
@@ -293,7 +316,8 @@ pub fn canonicalize_signed_email(
         .get_first_header(HEADER)
         .expect("No DKIM-Signature header");
     let value = String::from_utf8_lossy(h.get_value_raw());
-    let dkim_header = validate_header(&value)?;
+    // let dkim_header = validate_header(&value)?;
+    let dkim_header = get_header_unchecked(&value)?;
     let signature_raw = general_purpose::STANDARD
         .decode(dkim_header.get_required_tag("b"))
         .map_err(|err| {
@@ -327,7 +351,7 @@ pub async fn resolve_public_key(
         .get_first_header(HEADER)
         .expect("No DKIM-Signature header");
     let value = String::from_utf8_lossy(h.get_value_raw());
-    let dkim_header = validate_header(&value)?;
+    let dkim_header = get_header_unchecked(&value)?;
     let resolver = TokioAsyncResolver::tokio_from_system_conf().map_err(|err| {
         DKIMError::UnknownInternalError(format!("failed to create DNS resolver: {}", err))
     })?;
