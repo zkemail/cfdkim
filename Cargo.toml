@@ -1,6 +1,6 @@
 [package]
 name = "cfdkim"
-version = "0.2.6"
+version = "0.3.0"
 authors = ["Sven Sauleau <sven@cloudflare.com>"]
 edition = "2021"
 description = "DKIM (RFC6376) implementation"
@@ -12,7 +12,7 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-ed25519-dalek = "1.0.1"
+ed25519-dalek = "2"
 mailparse = "0.14"
 quick-error = "2.0.1"
 nom = "7.1.0"

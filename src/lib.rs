@@ -10,6 +10,7 @@ use rsa::RsaPublicKey;
 use sha1::Sha1;
 use sha2::Sha256;
 use slog::debug;
+use std::array::TryFromSliceError;
 use std::collections::HashSet;
 use std::sync::Arc;
 use trust_dns_resolver::TokioAsyncResolver;
@@ -39,7 +40,7 @@ use header::{DKIMHeader, HEADER, REQUIRED_TAGS};
 pub use parser::tag_list as parse_tag_list;
 pub use parser::Tag;
 pub use result::DKIMResult;
-pub use sign::{Signer, SignerBuilder};
+pub use sign::{DKIMSigner, SignerBuilder};
 
 const SIGN_EXPIRATION_DRIFT_MINS: i64 = 15;
 const DNS_NAMESPACE: &str = "_domainkey";
@@ -47,13 +48,13 @@ const DNS_NAMESPACE: &str = "_domainkey";
 #[derive(Debug)]
 pub enum DkimPublicKey {
     Rsa(RsaPublicKey),
-    Ed25519(ed25519_dalek::PublicKey),
+    Ed25519(ed25519_dalek::VerifyingKey),
 }
 
 #[derive(Debug)]
 pub enum DkimPrivateKey {
     Rsa(RsaPrivateKey),
-    Ed25519(ed25519_dalek::Keypair),
+    Ed25519(ed25519_dalek::SigningKey),
 }
 
 // https://datatracker.ietf.org/doc/html/rfc6376#section-6.1.1
@@ -184,8 +185,9 @@ fn verify_signature(
         DkimPublicKey::Ed25519(public_key) => public_key
             .verify_strict(
                 &header_hash,
-                &ed25519_dalek::Signature::from_bytes(&signature)
-                    .map_err(|err| DKIMError::SignatureSyntaxError(err.to_string()))?,
+                &ed25519_dalek::Signature::from_bytes((&signature as &[u8]).try_into().map_err(
+                    |err: TryFromSliceError| DKIMError::SignatureSyntaxError(err.to_string()),
+                )?),
             )
             .is_ok(),
     })
