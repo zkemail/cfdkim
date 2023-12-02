@@ -1,9 +1,9 @@
 use base64::engine::general_purpose;
 use base64::Engine;
 use ed25519_dalek::Signer;
-use rsa;
+use rsa::pkcs1v15::SigningKey;
+use rsa::signature::SignatureEncoding;
 use sha1::Sha1;
-use sha2::Sha256;
 
 use crate::header::DKIMHeaderBuilder;
 use crate::{canonicalization, hash, DKIMError, DkimPrivateKey, HEADER};
@@ -163,22 +163,17 @@ impl<'a> DKIMSigner<'a> {
         let header_hash = self.compute_header_hash(email, dkim_header_builder.clone())?;
 
         let signature = match &self.private_key {
-            DkimPrivateKey::Rsa(private_key) => private_key
-                .sign(
-                    match &self.hash_algo {
-                        hash::HashAlgo::RsaSha1 => rsa::PaddingScheme::PKCS1v15Sign {
-                            hash: Some(rsa::Hash::SHA1),
-                        },
-                        hash::HashAlgo::RsaSha256 => rsa::PaddingScheme::PKCS1v15Sign {
-                            hash: Some(rsa::Hash::SHA2_256),
-                        },
-                        hash => {
-                            return Err(DKIMError::UnsupportedHashAlgorithm(format!("{:?}", hash)))
-                        }
-                    },
-                    &header_hash,
-                )
-                .map_err(|err| DKIMError::FailedToSign(err.to_string()))?,
+            DkimPrivateKey::Rsa(private_key) => match &self.hash_algo {
+                hash::HashAlgo::RsaSha256 => {
+                    let signing_key = SigningKey::<rsa::sha2::Sha256>::new(private_key.clone());
+                    signing_key.sign(&header_hash).to_vec()
+                }
+                hash::HashAlgo::RsaSha1 => {
+                    let signing_key = SigningKey::<Sha1>::new(private_key.clone());
+                    signing_key.sign(&header_hash).to_vec()
+                }
+                hash => return Err(DKIMError::UnsupportedHashAlgorithm(format!("{:?}", hash))),
+            },
             DkimPrivateKey::Ed25519(keypair) => keypair.sign(&header_hash).to_bytes().into(),
         };
 

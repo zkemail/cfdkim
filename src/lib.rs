@@ -4,11 +4,11 @@ use base64::engine::general_purpose;
 use base64::Engine;
 use hash::canonicalize_header_email;
 use indexmap::map::IndexMap;
-use rsa::PublicKey;
+use rsa::traits::SignatureScheme;
+use rsa::Pkcs1v15Sign;
 use rsa::RsaPrivateKey;
 use rsa::RsaPublicKey;
 use sha1::Sha1;
-use sha2::Sha256;
 use slog::debug;
 use std::array::TryFromSliceError;
 use std::collections::HashSet;
@@ -167,21 +167,17 @@ fn verify_signature(
     public_key: DkimPublicKey,
 ) -> Result<bool, DKIMError> {
     Ok(match public_key {
-        DkimPublicKey::Rsa(public_key) => public_key
-            .verify(
-                match hash_algo {
-                    hash::HashAlgo::RsaSha1 => rsa::PaddingScheme::PKCS1v15Sign {
-                        hash: Some(rsa::Hash::SHA1),
-                    },
-                    hash::HashAlgo::RsaSha256 => rsa::PaddingScheme::PKCS1v15Sign {
-                        hash: Some(rsa::Hash::SHA2_256),
-                    },
-                    hash => return Err(DKIMError::UnsupportedHashAlgorithm(format!("{:?}", hash))),
-                },
-                &header_hash,
-                &signature,
-            )
-            .is_ok(),
+        DkimPublicKey::Rsa(public_key) => match hash_algo {
+            hash::HashAlgo::RsaSha256 => {
+                let scheme = Pkcs1v15Sign::new::<rsa::sha2::Sha256>();
+                scheme.verify(&public_key, &header_hash, &signature).is_ok()
+            }
+            hash::HashAlgo::RsaSha1 => {
+                let scheme = Pkcs1v15Sign::new::<Sha1>();
+                scheme.verify(&public_key, &header_hash, &signature).is_ok()
+            }
+            hash => return Err(DKIMError::UnsupportedHashAlgorithm(format!("{:?}", hash))),
+        },
         DkimPublicKey::Ed25519(public_key) => public_key
             .verify_strict(
                 &header_hash,
