@@ -1,12 +1,14 @@
+use crate::header::DKIMHeaderBuilder;
+use crate::{canonicalization, hash, DKIMError, DkimPrivateKey, HEADER};
 use base64::engine::general_purpose;
 use base64::Engine;
 use ed25519_dalek::Signer;
 use rsa::pkcs1v15::SigningKey;
+use rsa::rand_core::OsRng;
 use rsa::signature::SignatureEncoding;
+use rsa::traits::SignatureScheme;
+use rsa::Pkcs1v15Sign;
 use sha1::Sha1;
-
-use crate::header::DKIMHeaderBuilder;
-use crate::{canonicalization, hash, DKIMError, DkimPrivateKey, HEADER};
 
 /// Builder for the Signer
 pub struct SignerBuilder<'a> {
@@ -165,12 +167,16 @@ impl<'a> DKIMSigner<'a> {
         let signature = match &self.private_key {
             DkimPrivateKey::Rsa(private_key) => match &self.hash_algo {
                 hash::HashAlgo::RsaSha256 => {
-                    let signing_key = SigningKey::<rsa::sha2::Sha256>::new(private_key.clone());
-                    signing_key.sign(&header_hash).to_vec()
+                    let scheme = Pkcs1v15Sign::new::<rsa::sha2::Sha256>();
+                    scheme
+                        .sign::<DummyRng>(None, &private_key, &header_hash)
+                        .map_err(|err| DKIMError::FailedToSign(err.to_string()))?
                 }
                 hash::HashAlgo::RsaSha1 => {
-                    let signing_key = SigningKey::<Sha1>::new(private_key.clone());
-                    signing_key.sign(&header_hash).to_vec()
+                    let scheme = Pkcs1v15Sign::new::<rsa::sha2::Sha256>();
+                    scheme
+                        .sign::<DummyRng>(None, &private_key, &header_hash)
+                        .map_err(|err| DKIMError::FailedToSign(err.to_string()))?
                 }
                 hash => return Err(DKIMError::UnsupportedHashAlgorithm(format!("{:?}", hash))),
             },
@@ -250,6 +256,33 @@ impl<'a> DKIMSigner<'a> {
         )
     }
 }
+
+use rsa::rand_core::{CryptoRng, RngCore};
+
+/// This is a dummy RNG for cases when we need a concrete RNG type
+/// which does not get used.
+#[derive(Copy, Clone)]
+pub(crate) struct DummyRng;
+
+impl RngCore for DummyRng {
+    fn next_u32(&mut self) -> u32 {
+        unimplemented!();
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        unimplemented!();
+    }
+
+    fn fill_bytes(&mut self, _: &mut [u8]) {
+        unimplemented!();
+    }
+
+    fn try_fill_bytes(&mut self, _: &mut [u8]) -> core::result::Result<(), rsa::rand_core::Error> {
+        unimplemented!();
+    }
+}
+
+impl CryptoRng for DummyRng {}
 
 #[cfg(test)]
 mod tests {
