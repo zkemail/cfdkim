@@ -1,7 +1,9 @@
 use crate::DKIMError;
 use futures::future::BoxFuture;
 use std::sync::Arc;
+#[cfg(not(target_arch = "wasm32"))]
 use trust_dns_resolver::error::{ResolveError, ResolveErrorKind};
+#[cfg(not(target_arch = "wasm32"))]
 use trust_dns_resolver::TokioAsyncResolver;
 
 /// A trait for entities that perform DNS resolution.
