@@ -370,6 +370,77 @@ pub async fn resolve_public_key(
     Ok(public_key)
 }
 
+#[cfg(target_arch = "wasm32")]
+pub async fn resolve_rsa_public_key(email_bytes: &[u8]) -> Result<RsaPublicKey, DKIMError> {
+    use base64::{engine::general_purpose, Engine as _};
+    use nom::Err;
+    use regex::Regex;
+    use reqwasm::http::Request;
+    use rsa::pkcs1::DecodeRsaPublicKey;
+    use rsa::pkcs8::DecodePublicKey;
+    use serde_json::{self, Value};
+
+    let email = mailparse::parse_mail(email_bytes).expect("fail to parse the email bytes");
+    let h = email
+        .headers
+        .get_first_header(HEADER)
+        .expect("No DKIM-Signature header");
+    let value = String::from_utf8_lossy(h.get_value_raw());
+    let dkim_header = get_header_unchecked(&value)?;
+    let host = "dns.google";
+    let url = format!(
+        "https://{}/resolve?name={}._domainkey.{}&type=TXT",
+        host,
+        dkim_header.get_required_tag("s"),
+        dkim_header.get_required_tag("d")
+    );
+    let response = Request::get(&url)
+        .send()
+        .await
+        .map_err(|err| DKIMError::KeyUnavailable(err.to_string()))?;
+    if response.status() != 200 {
+        return Err(DKIMError::KeyUnavailable(format!(
+            "Google DNS returned a code {} and a message {}",
+            response.status(),
+            response.status_text()
+        )));
+    }
+    let body_json = serde_json::from_str::<Value>(&response.text().await.unwrap()).unwrap();
+    let answers: Vec<Value> = body_json["Answer"]
+        .as_array()
+        .expect("No array of Answer")
+        .to_vec();
+
+    for i in 0..answers.len() {
+        let data = answers[i]["data"].to_string();
+        let k = Regex::new("k=[a-z]+").unwrap().find(&data);
+        match k {
+            None => continue,
+            Some(k) => {
+                if k.as_str() != "k=rsa" {
+                    continue;
+                }
+            }
+        }
+        let pubkey_base64 = Regex::new("p=[A-Za-z0-9\\+/]+")
+            .unwrap()
+            .find(&data)
+            .unwrap()
+            .as_str();
+        let pubkey_pkcs = general_purpose::STANDARD
+            .decode(&pubkey_base64.to_string()[2..])
+            .expect("base64 decode failed");
+        let pubkey = RsaPublicKey::from_public_key_der(&pubkey_pkcs)
+            .map_err(|_| RsaPublicKey::from_pkcs1_der(&pubkey_pkcs))
+            .expect("Invalid DER-encoded rsa public key.");
+
+        return Ok(pubkey);
+    }
+    Err(DKIMError::KeyUnavailable(format!(
+        "No RSA key found in the DNS response"
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::dns::Lookup;
