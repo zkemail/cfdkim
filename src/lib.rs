@@ -371,11 +371,11 @@ pub async fn resolve_public_key(
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn resolve_rsa_public_key(email_bytes: &[u8]) -> Result<RsaPublicKey, DKIMError> {
+pub async fn get_google_dns_url(email_bytes: &[u8]) -> Result<String, DKIMError> {
     use base64::{engine::general_purpose, Engine as _};
     use nom::Err;
     use regex::Regex;
-    use reqwasm::http::Request;
+    // use reqwasm::http::Request;
     use rsa::pkcs1::DecodeRsaPublicKey;
     use rsa::pkcs8::DecodePublicKey;
     use serde_json::{self, Value};
@@ -394,18 +394,20 @@ pub async fn resolve_rsa_public_key(email_bytes: &[u8]) -> Result<RsaPublicKey, 
         dkim_header.get_required_tag("s"),
         dkim_header.get_required_tag("d")
     );
-    let response = Request::get(&url)
-        .send()
-        .await
-        .map_err(|err| DKIMError::KeyUnavailable(err.to_string()))?;
-    if response.status() != 200 {
-        return Err(DKIMError::KeyUnavailable(format!(
-            "Google DNS returned a code {} and a message {}",
-            response.status(),
-            response.status_text()
-        )));
-    }
-    let body_json = serde_json::from_str::<Value>(&response.text().await.unwrap()).unwrap();
+    Ok(url)
+}
+
+#[cfg(target_arch = "wasm32")]
+pub async fn get_rsa_public_key_from_google_dns(response: &str) -> Result<RsaPublicKey, DKIMError> {
+    use base64::{engine::general_purpose, Engine as _};
+    use nom::Err;
+    use regex::Regex;
+    // use reqwasm::http::Request;
+    use rsa::pkcs1::DecodeRsaPublicKey;
+    use rsa::pkcs8::DecodePublicKey;
+    use serde_json::{self, Value};
+
+    let body_json = serde_json::from_str::<Value>(&response).unwrap();
     let answers: Vec<Value> = body_json["Answer"]
         .as_array()
         .expect("No array of Answer")
