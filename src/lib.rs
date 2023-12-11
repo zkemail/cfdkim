@@ -371,7 +371,7 @@ pub async fn resolve_public_key(
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn get_google_dns_url(email_bytes: &[u8]) -> Result<String, DKIMError> {
+pub fn get_google_dns_url(email_bytes: &[u8]) -> Result<String, DKIMError> {
     use base64::{engine::general_purpose, Engine as _};
     use nom::Err;
     use regex::Regex;
@@ -398,7 +398,7 @@ pub async fn get_google_dns_url(email_bytes: &[u8]) -> Result<String, DKIMError>
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn get_rsa_public_key_from_google_dns(response: &str) -> Result<RsaPublicKey, DKIMError> {
+pub fn get_rsa_public_key_from_google_dns(response: &str) -> Result<RsaPublicKey, DKIMError> {
     use base64::{engine::general_purpose, Engine as _};
     use nom::Err;
     use regex::Regex;
