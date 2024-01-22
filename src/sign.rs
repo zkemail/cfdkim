@@ -3,12 +3,9 @@ use crate::{canonicalization, hash, DKIMError, DkimPrivateKey, HEADER};
 use base64::engine::general_purpose;
 use base64::Engine;
 use ed25519_dalek::Signer;
-use rsa::pkcs1v15::SigningKey;
-use rsa::rand_core::OsRng;
-use rsa::signature::SignatureEncoding;
+
 use rsa::traits::SignatureScheme;
 use rsa::Pkcs1v15Sign;
-use sha1::Sha1;
 
 /// Builder for the Signer
 pub struct SignerBuilder<'a> {
