@@ -13,7 +13,7 @@ license = "MIT"
 
 [dependencies]
 ed25519-dalek = "2"
-mailparse = "0.14"
+mailparse = "0.15"
 quick-error = "2.0.1"
 nom = "7.1.0"
 chrono = { version = "0.4.19", default-features = false, features = [
