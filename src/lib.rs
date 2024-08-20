@@ -36,7 +36,6 @@ mod roundtrip_test;
 mod sign;
 
 use crate::canonicalization::*;
-use crate::hash::get_body;
 pub use errors::DKIMError;
 use header::{DKIMHeader, HEADER, REQUIRED_TAGS};
 pub use parser::tag_list as parse_tag_list;
@@ -326,14 +325,9 @@ pub fn canonicalize_signed_email(
         .map_err(|err| {
             DKIMError::SignatureSyntaxError(format!("failed to decode signature: {}", err))
         })?;
-    let (header_canonicalization_type, body_canonicalization_type) =
+    let (header_canonicalization_type, _) =
         parser::parse_canonicalization(dkim_header.get_tag("c"))?;
-    let body = get_body(&email)?;
-    let canonicalized_body = if body_canonicalization_type == canonicalization::Type::Simple {
-        canonicalize_body_simple(&body)
-    } else {
-        canonicalize_body_relaxed(&body)
-    };
+    let canonicalized_body = get_canonicalized_body(email_bytes);
     let canonicalized_header = canonicalize_header_email(
         header_canonicalization_type,
         &dkim_header.get_required_tag("h"),
@@ -341,6 +335,7 @@ pub fn canonicalize_signed_email(
         &email,
     )?;
 
+    // Ok((canonicalized_header, Vec::new(), signature_raw))
     Ok((canonicalized_header, canonicalized_body, signature_raw))
 }
 

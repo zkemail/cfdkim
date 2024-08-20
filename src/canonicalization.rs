@@ -15,6 +15,69 @@ impl std::string::ToString for Type {
     }
 }
 
+#[derive(PartialEq, Clone, Debug)]
+pub enum ContentTransferEncoding {
+    Base64,
+    QuotedPrintable,
+    SevenBit,
+    EightBit,
+    Binary,
+}
+
+pub(crate) fn get_content_transfer_encoding(value: Option<String>) -> ContentTransferEncoding {
+    match value {
+        Some(value) => match value.to_lowercase().as_str() {
+            "base64" => ContentTransferEncoding::Base64,
+            "quoted-printable" => ContentTransferEncoding::QuotedPrintable,
+            "7bit" => ContentTransferEncoding::SevenBit,
+            "8bit" => ContentTransferEncoding::EightBit,
+            "binary" => ContentTransferEncoding::Binary,
+            _ => ContentTransferEncoding::SevenBit,
+        },
+        None => ContentTransferEncoding::SevenBit,
+    }
+}
+
+pub(crate) fn get_canonicalized_body(email_bytes: &[u8]) -> Vec<u8> {
+    let email = mailparse::parse_mail(email_bytes).expect("fail to parse the email bytes");
+    let content_type = email.ctype;
+
+    match content_type.mimetype.as_str() {
+        "multipart/alternative" => {
+            let mut subparts = email.subparts;
+            for subpart in subparts.iter_mut() {
+                let content_type = &subpart.ctype;
+                match content_type.mimetype.as_str() {
+                    "text/plain" => {
+                        return subpart.get_body_raw().unwrap();
+                    }
+                    _ => {}
+                }
+            }
+        }
+        "text/plain" => {
+            let content_transfer_encoding = email
+                .headers
+                .iter()
+                .find(|h| h.get_key() == "Content-Transfer-Encoding")
+                .map(|h| h.get_value());
+            let content_transfer_encoding =
+                get_content_transfer_encoding(content_transfer_encoding);
+            let email = mailparse::parse_mail(email_bytes).expect("fail to parse the email bytes");
+
+            match content_transfer_encoding {
+                ContentTransferEncoding::QuotedPrintable => {
+                    return email.get_body_raw().unwrap();
+                }
+                _ => {}
+            }
+        }
+        _ => {}
+    }
+
+    Vec::new()
+}
+
 /// Canonicalize body using the simple canonicalization algorithm.
 ///
 /// The first argument **must** be the body of the mail.
