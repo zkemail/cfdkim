@@ -45,14 +45,29 @@ pub(crate) fn get_canonicalized_body(email_bytes: &[u8]) -> Vec<u8> {
     match content_type.mimetype.as_str() {
         "multipart/alternative" => {
             let mut subparts = email.subparts;
+            let mut html_body: Option<Vec<u8>> = None;
+            let mut plain_text_body: Option<Vec<u8>> = None;
             for subpart in subparts.iter_mut() {
                 let content_type = &subpart.ctype;
                 match content_type.mimetype.as_str() {
+                    "text/html" => {
+                        // Store text/html body
+                        html_body = subpart.get_body_raw().ok();
+                    }
                     "text/plain" => {
-                        return subpart.get_body_raw().unwrap();
+                        // Store text/plain body
+                        plain_text_body = subpart.get_body_raw().ok();
                     }
                     _ => {}
                 }
+            }
+            // Return text/html body if available, otherwise return text/plain body
+            match html_body {
+                Some(html_body) => return html_body,
+                None => match plain_text_body {
+                    Some(plain_text_body) => return plain_text_body,
+                    None => {}
+                },
             }
         }
         "text/plain" => {
