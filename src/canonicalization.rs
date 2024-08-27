@@ -1,3 +1,5 @@
+use mailparse::parse_headers;
+
 // Inspired from https://docs.rs/dkim/latest/src/dkim/canonicalization.rs.html
 use crate::bytes;
 
@@ -24,73 +26,60 @@ pub enum ContentTransferEncoding {
     Binary,
 }
 
-pub(crate) fn get_content_transfer_encoding(value: Option<String>) -> ContentTransferEncoding {
-    match value {
-        Some(value) => match value.to_lowercase().as_str() {
-            "base64" => ContentTransferEncoding::Base64,
-            "quoted-printable" => ContentTransferEncoding::QuotedPrintable,
-            "7bit" => ContentTransferEncoding::SevenBit,
-            "8bit" => ContentTransferEncoding::EightBit,
-            "binary" => ContentTransferEncoding::Binary,
-            _ => ContentTransferEncoding::SevenBit,
-        },
-        None => ContentTransferEncoding::SevenBit,
+fn normalize_body_content(body_content: Vec<u8>) -> Vec<u8> {
+    // Trim trailing whitespace
+    let trimmed_content = body_content
+        .iter()
+        .rev()
+        .skip_while(|&&b| b.is_ascii_whitespace())
+        .cloned()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>();
+
+    // Replace LF with CRLF and remove any CR before LF to avoid duplicating CR
+    let mut crlf_content = Vec::new();
+    let mut previous_byte = 0;
+    for &byte in &trimmed_content {
+        if byte == b'\n' && previous_byte != b'\r' {
+            crlf_content.push(b'\r');
+        }
+        if byte != b'\r' || previous_byte != b'\r' {
+            crlf_content.push(byte);
+        }
+        previous_byte = byte;
     }
+
+    // Ensure the content ends with CRLF
+    if crlf_content.len() < 2
+        || crlf_content[crlf_content.len() - 2] != b'\r'
+        || crlf_content[crlf_content.len() - 1] != b'\n'
+    {
+        crlf_content.extend_from_slice(b"\r\n");
+    }
+
+    crlf_content
 }
 
 pub(crate) fn get_canonicalized_body(email_bytes: &[u8]) -> Vec<u8> {
-    let email = mailparse::parse_mail(email_bytes).expect("fail to parse the email bytes");
-    let content_type = email.ctype;
+    let (_, ix) = parse_headers(&email_bytes).unwrap();
+    let body = &email_bytes[ix..];
 
-    match content_type.mimetype.as_str() {
-        "multipart/alternative" => {
-            let mut subparts = email.subparts;
-            let mut html_body: Option<Vec<u8>> = None;
-            let mut plain_text_body: Option<Vec<u8>> = None;
-            for subpart in subparts.iter_mut() {
-                let content_type = &subpart.ctype;
-                match content_type.mimetype.as_str() {
-                    "text/html" => {
-                        // Store text/html body
-                        html_body = subpart.get_body_raw().ok();
-                    }
-                    "text/plain" => {
-                        // Store text/plain body
-                        plain_text_body = subpart.get_body_raw().ok();
-                    }
-                    _ => {}
-                }
+    // Check if \n is used instead of \r\n for line endings if so replace it
+    let body = body
+        .iter()
+        .enumerate()
+        .flat_map(|(i, &b)| {
+            if b == b'\n' && body.get(i.wrapping_sub(1)) != Some(&b'\r') {
+                vec![b'\r', b'\n'].into_iter()
+            } else {
+                vec![b].into_iter()
             }
-            // Return text/html body if available, otherwise return text/plain body
-            match html_body {
-                Some(html_body) => return html_body,
-                None => match plain_text_body {
-                    Some(plain_text_body) => return plain_text_body,
-                    None => {}
-                },
-            }
-        }
-        "text/plain" => {
-            let content_transfer_encoding = email
-                .headers
-                .iter()
-                .find(|h| h.get_key() == "Content-Transfer-Encoding")
-                .map(|h| h.get_value());
-            let content_transfer_encoding =
-                get_content_transfer_encoding(content_transfer_encoding);
-            let email = mailparse::parse_mail(email_bytes).expect("fail to parse the email bytes");
+        })
+        .collect::<Vec<u8>>();
 
-            match content_transfer_encoding {
-                ContentTransferEncoding::QuotedPrintable => {
-                    return email.get_body_raw().unwrap();
-                }
-                _ => {}
-            }
-        }
-        _ => {}
-    }
-
-    Vec::new()
+    normalize_body_content(body)
 }
 
 /// Canonicalize body using the simple canonicalization algorithm.
