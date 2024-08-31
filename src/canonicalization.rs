@@ -70,7 +70,18 @@ fn normalize_body_content(body_content: Vec<u8>) -> Vec<u8> {
         crlf_content.extend_from_slice(b"\r\n");
     }
 
-    crlf_content
+    // No spaces before \r\n anywhere in the content
+    let mut no_space_before_crlf_content = Vec::new();
+    let mut iter = crlf_content.iter().peekable();
+    while let Some(&byte) = iter.next() {
+        // Look ahead to check for space followed by \r\n
+        if byte == b' ' && iter.peek() == Some(&&b'\r') && iter.clone().nth(1) == Some(&b'\n') {
+            continue; // Skip adding the space to the output
+        }
+        no_space_before_crlf_content.push(byte);
+    }
+
+    no_space_before_crlf_content
 }
 
 pub(crate) fn get_canonicalized_body(email_bytes: &[u8]) -> Vec<u8> {
