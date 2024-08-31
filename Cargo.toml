@@ -1,6 +1,6 @@
 [package]
 name = "cfdkim"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Sven Sauleau <sven@cloudflare.com>"]
 edition = "2021"
 description = "DKIM (RFC6376) implementation"
@@ -33,12 +33,7 @@ indexmap = "1.8.0"
 getrandom = { version = "0.2", features = ["js"] }
 wasm-bindgen = { version = "0.2.81", features = ["serde-serialize"] }
 console_error_panic_hook = "0.1.7"
-# rayon = "1.5"
-# wasm-bindgen-rayon = { version = "1.0" }
-# web-sys = { version = "0.3", features = ["Request", "Window", "Response"] }
-# wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
-# reqwasm = { version = "0.5.0", git = "https://github.com/SoraSuegami/reqwasm.git", branch = "master" }
 regex = "1.9.6"
 base64 = "0.21.4"
 serde_json = "1.0.93"

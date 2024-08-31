@@ -38,10 +38,21 @@ fn normalize_body_content(body_content: Vec<u8>) -> Vec<u8> {
         .rev()
         .collect::<Vec<_>>();
 
+    // Make sure there is only one space
+    let mut normalized_content = Vec::new();
+    let mut previous_byte = 32;
+    for &byte in &trimmed_content {
+        if byte == 32 && previous_byte == 32 {
+            continue;
+        }
+        normalized_content.push(byte);
+        previous_byte = byte;
+    }
+
     // Replace LF with CRLF and remove any CR before LF to avoid duplicating CR
     let mut crlf_content = Vec::new();
-    let mut previous_byte = 0;
-    for &byte in &trimmed_content {
+    let mut previous_byte = 32;
+    for &byte in &normalized_content {
         if byte == b'\n' && previous_byte != b'\r' {
             crlf_content.push(b'\r');
         }

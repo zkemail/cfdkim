@@ -2,6 +2,7 @@
 
 use base64::engine::general_purpose;
 use base64::Engine;
+use chrono::DateTime;
 use hash::canonicalize_header_email;
 use indexmap::map::IndexMap;
 use rsa::traits::SignatureScheme;
@@ -122,14 +123,12 @@ fn validate_header(value: &str) -> Result<DKIMHeader, DKIMError> {
 
     // Check that "x=" tag isn't expired
     if let Some(expiration) = header.get_tag("x") {
-        let mut expiration = chrono::NaiveDateTime::from_timestamp_opt(
-            expiration.parse::<i64>().unwrap_or_default(),
-            0,
-        )
-        .ok_or(DKIMError::SignatureExpired)?;
+        let mut expiration =
+            DateTime::from_timestamp(expiration.parse::<i64>().unwrap_or_default(), 0)
+                .ok_or(DKIMError::SignatureExpired)?;
         expiration += chrono::Duration::minutes(SIGN_EXPIRATION_DRIFT_MINS);
         let now = chrono::Utc::now().naive_utc();
-        if now > expiration {
+        if now > expiration.naive_utc() {
             return Err(DKIMError::SignatureExpired);
         }
     }
