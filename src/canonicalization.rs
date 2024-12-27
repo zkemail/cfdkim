@@ -40,13 +40,17 @@ fn normalize_body_content(body_content: Vec<u8>) -> Vec<u8> {
 
     // Make sure there is only one space
     let mut normalized_content = Vec::new();
-    let mut previous_byte = 32;
+    let mut previous_was_whitespace = false;
     for &byte in &trimmed_content {
-        if byte == 32 && previous_byte == 32 {
-            continue;
+        if byte.is_ascii_whitespace() {
+            if !previous_was_whitespace {
+                normalized_content.push(b' ');
+                previous_was_whitespace = true;
+            }
+        } else {
+            normalized_content.push(byte);
+            previous_was_whitespace = false;
         }
-        normalized_content.push(byte);
-        previous_byte = byte;
     }
 
     // Replace LF with CRLF and remove any CR before LF to avoid duplicating CR
