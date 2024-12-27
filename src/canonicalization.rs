@@ -42,7 +42,7 @@ fn normalize_body_content(body_content: Vec<u8>) -> Vec<u8> {
     let mut normalized_content = Vec::new();
     let mut previous_was_whitespace = false;
     for &byte in &trimmed_content {
-        if byte.is_ascii_whitespace() {
+        if byte == b' ' || byte == b'\t' {
             if !previous_was_whitespace {
                 normalized_content.push(b' ');
                 previous_was_whitespace = true;
