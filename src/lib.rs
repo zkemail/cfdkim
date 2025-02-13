@@ -654,3 +654,83 @@ Joe.
         assert!(dkim_verify_result.is_ok());
     }
 }
+
+pub fn verify_email_with_key<'a>(
+    logger: &slog::Logger,
+    from_domain: &str,
+    email: &'a mailparse::ParsedMail<'a>,
+    public_key: DkimPublicKey,
+) -> Result<DKIMResult, DKIMError> {
+    let mut last_error = None;
+
+    for h in email.headers.get_all_headers(HEADER) {
+        let value = String::from_utf8_lossy(h.get_value_raw());
+        debug!(logger, "checking signature {:?}", value);
+
+        let dkim_header = match validate_header(&value) {
+            Ok(v) => v,
+            Err(err) => {
+                debug!(logger, "failed to verify: {}", err);
+                last_error = Some(err);
+                continue;
+            }
+        };
+
+        // select the signature corresponding to the email sender
+        let signing_domain = dkim_header.get_required_tag("d");
+        if signing_domain.to_lowercase() != from_domain.to_lowercase() {
+            // CHECK!
+            continue;
+        }
+
+        let (header_canon_type, body_canon_type) =
+            parser::parse_canonicalization(dkim_header.get_tag("c"))?;
+        let hash_algo = parser::parse_hash_algo(&dkim_header.get_required_tag("a"))?;
+
+        let computed_body_hash = hash::compute_body_hash(
+            body_canon_type.clone(),
+            dkim_header.get_tag("l"),
+            hash_algo.clone(),
+            email,
+        )?;
+
+        let computed_header_hash = hash::compute_headers_hash(
+            logger,
+            header_canon_type.clone(),
+            &dkim_header.get_required_tag("h"),
+            hash_algo.clone(),
+            &dkim_header,
+            email,
+        )?;
+
+        debug!(logger, "body_hash {:?}", computed_body_hash);
+
+        let header_body_hash = dkim_header.get_required_tag("bh");
+
+        if header_body_hash != computed_body_hash {
+            return Err(DKIMError::BodyHashDidNotVerify);
+        }
+
+        let signature = general_purpose::STANDARD
+            .decode(dkim_header.get_required_tag("b"))
+            .map_err(|err| {
+                DKIMError::SignatureSyntaxError(format!("failed to decode signature: {}", err))
+            })?;
+
+        if !verify_signature(hash_algo, computed_header_hash, signature, public_key)? {
+            return Err(DKIMError::SignatureDidNotVerify);
+        }
+
+        return Ok(DKIMResult::pass(
+            signing_domain,
+            header_canon_type,
+            body_canon_type,
+        ));
+    }
+
+    if let Some(err) = last_error {
+        Ok(DKIMResult::fail(err, from_domain.to_owned()))
+    } else {
+        Ok(DKIMResult::neutral(from_domain.to_owned()))
+    }
+}
