@@ -37,6 +37,7 @@ js-sys = "0.3"
 regex = "1.9.6"
 base64 = "0.21.4"
 serde_json = "1.0.93"
+web-sys = { version = "0.3", features = ["console"] }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 trust-dns-resolver = "0.22"
