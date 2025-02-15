@@ -49,6 +49,20 @@ pub use sign::{DKIMSigner, SignerBuilder};
 const SIGN_EXPIRATION_DRIFT_MINS: i64 = 15;
 const DNS_NAMESPACE: &str = "_domainkey";
 
+#[cfg(target_arch = "wasm32")]
+fn get_current_time() -> chrono::NaiveDateTime {
+    use js_sys::Date;
+    let now = Date::new_0();
+    let timestamp = now.get_time() / 1000.0; // Convert milliseconds to seconds
+    chrono::NaiveDateTime::from_timestamp_opt(timestamp as i64, 0)
+        .expect("Invalid timestamp from browser")
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn get_current_time() -> chrono::NaiveDateTime {
+    chrono::Utc::now().naive_utc()
+}
+
 #[derive(Debug)]
 pub enum DkimPublicKey {
     Rsa(RsaPublicKey),
@@ -133,7 +147,7 @@ fn validate_header(value: &str) -> Result<DKIMHeader, DKIMError> {
         console::info_1(&"got expiration".into());
         expiration += chrono::Duration::minutes(SIGN_EXPIRATION_DRIFT_MINS);
         console::info_1(&"getting utc:now".into());
-        let now = chrono::Utc::now().naive_utc();
+        let now = get_current_time();
         console::info_1(&"got utc::now".into());
         if now > expiration.naive_utc() {
             return Err(DKIMError::SignatureExpired);
