@@ -63,6 +63,7 @@ pub enum DkimPrivateKey {
 
 // https://datatracker.ietf.org/doc/html/rfc6376#section-6.1.1
 fn validate_header(value: &str) -> Result<DKIMHeader, DKIMError> {
+    console::info_1(&"validating header".into());
     let (_, tags) =
         parser::tag_list(value).map_err(|err| DKIMError::SignatureSyntaxError(err.to_string()))?;
 
@@ -125,11 +126,15 @@ fn validate_header(value: &str) -> Result<DKIMHeader, DKIMError> {
 
     // Check that "x=" tag isn't expired
     if let Some(expiration) = header.get_tag("x") {
+        console::info_1(&"checking expiration of header tag x".into());
         let mut expiration =
             DateTime::from_timestamp(expiration.parse::<i64>().unwrap_or_default(), 0)
                 .ok_or(DKIMError::SignatureExpired)?;
+        console::info_1(&"got expiration".into());
         expiration += chrono::Duration::minutes(SIGN_EXPIRATION_DRIFT_MINS);
+        console::info_1(&"getting utc:now".into());
         let now = chrono::Utc::now().naive_utc();
+        console::info_1(&"got utc::now".into());
         if now > expiration.naive_utc() {
             return Err(DKIMError::SignatureExpired);
         }
@@ -663,7 +668,7 @@ pub fn verify_email_with_key<'a>(
     email: &'a mailparse::ParsedMail<'a>,
     public_key: DkimPublicKey,
 ) -> Result<DKIMResult, DKIMError> {
-    console::info_1(&"verifying email with key".into());
+    console::info_1(&"verifying email with key 2".into());
     let mut last_error = None;
 
     for h in email.headers.get_all_headers(HEADER) {
