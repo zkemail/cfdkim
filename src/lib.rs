@@ -674,6 +674,7 @@ pub fn verify_email_with_key<'a>(
     from_domain: &str,
     email: &'a mailparse::ParsedMail<'a>,
     public_key: DkimPublicKey,
+    check_body_hash: bool,
 ) -> Result<DKIMResult, DKIMError> {
     let mut last_error = None;
 
@@ -701,13 +702,6 @@ pub fn verify_email_with_key<'a>(
             parser::parse_canonicalization(dkim_header.get_tag("c"))?;
         let hash_algo = parser::parse_hash_algo(&dkim_header.get_required_tag("a"))?;
 
-        let computed_body_hash = hash::compute_body_hash(
-            body_canon_type.clone(),
-            dkim_header.get_tag("l"),
-            hash_algo.clone(),
-            email,
-        )?;
-
         let computed_header_hash = hash::compute_headers_hash(
             logger,
             header_canon_type.clone(),
@@ -717,12 +711,18 @@ pub fn verify_email_with_key<'a>(
             email,
         )?;
 
-        debug!(logger, "body_hash {:?}", computed_body_hash);
+        if check_body_hash {
+            let header_body_hash = dkim_header.get_required_tag("bh");
+            let computed_body_hash = hash::compute_body_hash(
+                body_canon_type.clone(),
+                dkim_header.get_tag("l"),
+                hash_algo.clone(),
+                email,
+            )?;
 
-        let header_body_hash = dkim_header.get_required_tag("bh");
-
-        if header_body_hash != computed_body_hash {
-            return Err(DKIMError::BodyHashDidNotVerify);
+            if header_body_hash != computed_body_hash {
+                return Err(DKIMError::BodyHashDidNotVerify);
+            }
         }
 
         let signature = general_purpose::STANDARD
