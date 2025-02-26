@@ -674,7 +674,7 @@ pub fn verify_email_with_key<'a>(
     from_domain: &str,
     email: &'a mailparse::ParsedMail<'a>,
     public_key: DkimPublicKey,
-    check_body_hash: bool,
+    ignore_body_hash: bool,
 ) -> Result<DKIMResult, DKIMError> {
     let mut last_error = None;
 
@@ -711,7 +711,7 @@ pub fn verify_email_with_key<'a>(
             email,
         )?;
 
-        if check_body_hash {
+        if !ignore_body_hash {
             let header_body_hash = dkim_header.get_required_tag("bh");
             let computed_body_hash = hash::compute_body_hash(
                 body_canon_type.clone(),
