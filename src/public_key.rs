@@ -12,7 +12,7 @@ const ED25519_KEY_TYPE: &str = "ed25519";
 
 // https://datatracker.ietf.org/doc/html/rfc6376#section-6.1.2
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) async fn retrieve_public_key(
+pub async fn retrieve_public_key(
     logger: &slog::Logger,
     resolver: Arc<dyn dns::Lookup>,
     domain: String,
