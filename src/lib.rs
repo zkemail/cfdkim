@@ -30,7 +30,7 @@ mod errors;
 mod hash;
 mod header;
 mod parser;
-mod public_key;
+pub mod public_key;
 mod result;
 #[cfg(test)]
 mod roundtrip_test;
