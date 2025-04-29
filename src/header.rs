@@ -19,7 +19,7 @@ impl DKIMHeader {
         self.tags.get(name).map(|v| v.raw_value.clone())
     }
 
-    pub(crate) fn get_required_tag(&self, name: &str) -> String {
+    pub fn get_required_tag(&self, name: &str) -> String {
         // Required tags are guaranteed by the parser to be present so it's safe
         // to assert and unwrap.
         debug_assert!(REQUIRED_TAGS.contains(&name));

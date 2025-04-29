@@ -5,6 +5,7 @@ use base64::Engine;
 use chrono::DateTime;
 use hash::canonicalize_header_email;
 use indexmap::map::IndexMap;
+use rsa::pkcs1;
 use rsa::traits::SignatureScheme;
 use rsa::Pkcs1v15Sign;
 use rsa::RsaPrivateKey;
@@ -67,6 +68,38 @@ pub enum DkimPublicKey {
     Ed25519(ed25519_dalek::VerifyingKey),
 }
 
+impl DkimPublicKey {
+    /// Try to create a DkimPublicKey from bytes and key type
+    pub fn try_from_bytes(bytes: &[u8], key_type: &str) -> Result<Self, DKIMError> {
+        match key_type.to_lowercase().as_str() {
+            "rsa" => Self::parse_rsa_key(bytes),
+            "ed25519" => Self::parse_ed25519_key(bytes),
+            unsupported => Err(DKIMError::KeyUnavailable(format!(
+                "unsupported key type: {}",
+                unsupported
+            ))),
+        }
+    }
+
+    fn parse_rsa_key(bytes: &[u8]) -> Result<Self, DKIMError> {
+        pkcs1::DecodeRsaPublicKey::from_pkcs1_der(bytes)
+            .map(DkimPublicKey::Rsa)
+            .map_err(|err| DKIMError::KeyUnavailable(format!("failed to parse RSA key: {}", err)))
+    }
+
+    fn parse_ed25519_key(bytes: &[u8]) -> Result<Self, DKIMError> {
+        let key_bytes: [u8; 32] = bytes.try_into().map_err(|err| {
+            DKIMError::KeyUnavailable(format!("invalid Ed25519 key length: {}", err))
+        })?;
+
+        ed25519_dalek::VerifyingKey::from_bytes(&key_bytes)
+            .map(DkimPublicKey::Ed25519)
+            .map_err(|err| {
+                DKIMError::KeyUnavailable(format!("failed to parse Ed25519 key: {}", err))
+            })
+    }
+}
+
 #[derive(Debug)]
 pub enum DkimPrivateKey {
     Rsa(RsaPrivateKey),
@@ -74,7 +107,7 @@ pub enum DkimPrivateKey {
 }
 
 // https://datatracker.ietf.org/doc/html/rfc6376#section-6.1.1
-fn validate_header(value: &str) -> Result<DKIMHeader, DKIMError> {
+pub fn validate_header(value: &str) -> Result<DKIMHeader, DKIMError> {
     let (_, tags) =
         parser::tag_list(value).map_err(|err| DKIMError::SignatureSyntaxError(err.to_string()))?;
 
