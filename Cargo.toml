@@ -39,7 +39,7 @@ base64 = "0.21.4"
 serde_json = "1.0.93"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-trust-dns-resolver = "0.22"
+trust-dns-resolver = "0.23"
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 tokio = { version = "1.20", features = ["macros"] }
