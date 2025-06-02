@@ -15,7 +15,7 @@ use slog::debug;
 use std::array::TryFromSliceError;
 use std::collections::HashSet;
 use std::sync::Arc;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 use trust_dns_resolver::TokioAsyncResolver;
 
 use mailparse::MailHeaderMap;
@@ -25,7 +25,7 @@ extern crate quick_error;
 
 mod bytes;
 pub mod canonicalization;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 pub mod dns;
 mod errors;
 mod hash;
@@ -236,7 +236,7 @@ fn verify_signature(
     })
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 async fn verify_email_header<'a>(
     logger: &'a slog::Logger,
     resolver: Arc<dyn dns::Lookup>,
@@ -288,7 +288,7 @@ async fn verify_email_header<'a>(
 }
 
 /// Run the DKIM verification on the email providing an existing resolver
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 pub async fn verify_email_with_resolver<'a>(
     logger: &slog::Logger,
     from_domain: &str,
@@ -340,7 +340,7 @@ pub async fn verify_email_with_resolver<'a>(
 }
 
 /// Run the DKIM verification on the email
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 pub async fn verify_email<'a>(
     logger: &slog::Logger,
     from_domain: &str,
@@ -385,7 +385,7 @@ pub fn canonicalize_signed_email(
     Ok((canonicalized_header, canonicalized_body, signature_raw))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 pub async fn resolve_public_key(
     logger: &slog::Logger,
     email_bytes: &[u8],

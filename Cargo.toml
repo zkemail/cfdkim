@@ -11,6 +11,10 @@ keywords = ["email", "dkim", "authentification"]
 readme = "README.md"
 license = "MIT"
 
+[features]
+default = ["dns"]
+dns = ["trust-dns-resolver"]
+
 [dependencies]
 ed25519-dalek = "2"
 mailparse = "0.15"
@@ -39,7 +43,7 @@ base64 = "0.21.4"
 serde_json = "1.0.93"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-trust-dns-resolver = "0.23"
+trust-dns-resolver = { version = "0.23", optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 tokio = { version = "1.20", features = ["macros"] }
