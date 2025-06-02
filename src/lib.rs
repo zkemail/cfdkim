@@ -118,7 +118,7 @@ pub fn validate_header(value: &str) -> Result<DKIMHeader, DKIMError> {
             tag_names.insert(tag.name.clone());
         }
         for required in REQUIRED_TAGS {
-            if tag_names.get(*required).is_none() {
+            if !tag_names.contains(*required) {
                 return Err(DKIMError::SignatureMissingRequiredTag(required));
             }
         }

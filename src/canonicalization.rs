@@ -89,7 +89,7 @@ fn normalize_body_content(body_content: Vec<u8>) -> Vec<u8> {
 }
 
 pub(crate) fn get_canonicalized_body(email_bytes: &[u8]) -> Vec<u8> {
-    let (_, ix) = parse_headers(&email_bytes).unwrap();
+    let (_, ix) = parse_headers(email_bytes).unwrap();
     let body = &email_bytes[ix..];
 
     // Check if \n is used instead of \r\n for line endings if so replace it
