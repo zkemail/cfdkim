@@ -2,6 +2,7 @@
 
 use base64::engine::general_purpose;
 use base64::Engine;
+#[cfg(feature = "dkim-expiration-check")]
 use chrono::DateTime;
 use hash::canonicalize_header_email;
 use indexmap::map::IndexMap;
@@ -45,7 +46,9 @@ pub use parser::Tag;
 pub use result::DKIMResult;
 pub use sign::{DKIMSigner, SignerBuilder};
 
+#[cfg(feature = "dkim-expiration-check")]
 const SIGN_EXPIRATION_DRIFT_MINS: i64 = 15;
+
 const DNS_NAMESPACE: &str = "_domainkey";
 
 #[cfg(target_arch = "wasm32")]
@@ -57,7 +60,7 @@ fn get_current_time() -> chrono::NaiveDateTime {
         .expect("Invalid timestamp from browser")
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dkim-expiration-check", not(target_arch = "wasm32")))]
 fn get_current_time() -> chrono::NaiveDateTime {
     chrono::Utc::now().naive_utc()
 }
@@ -168,17 +171,18 @@ pub fn validate_header(value: &str) -> Result<DKIMHeader, DKIMError> {
         }
     }
 
-    // Skip checking that "x=" tag isn't expired since we need to support old emails
-    // if let Some(expiration) = header.get_tag("x") {
-    //     let mut expiration =
-    //         DateTime::from_timestamp(expiration.parse::<i64>().unwrap_or_default(), 0)
-    //             .ok_or(DKIMError::SignatureExpired)?;
-    //     expiration += chrono::Duration::minutes(SIGN_EXPIRATION_DRIFT_MINS);
-    //     let now = get_current_time();
-    //     if now > expiration.naive_utc() {
-    //         return Err(DKIMError::SignatureExpired);
-    //     }
-    // }
+    // Check that "x=" tag isn't expired
+    #[cfg(feature = "dkim-expiration-check")]
+    if let Some(expiration) = header.get_tag("x") {
+        let mut expiration =
+            DateTime::from_timestamp(expiration.parse::<i64>().unwrap_or_default(), 0)
+                .ok_or(DKIMError::SignatureExpired)?;
+        expiration += chrono::Duration::minutes(SIGN_EXPIRATION_DRIFT_MINS);
+        let now = get_current_time();
+        if now > expiration.naive_utc() {
+            return Err(DKIMError::SignatureExpired);
+        }
+    }
 
     Ok(header)
 }
