@@ -1,4 +1,4 @@
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 use crate::dns;
 use crate::{parser, DKIMError, DkimPublicKey, DNS_NAMESPACE};
 use base64::{engine::general_purpose, Engine};
@@ -11,7 +11,7 @@ const RSA_KEY_TYPE: &str = "rsa";
 const ED25519_KEY_TYPE: &str = "ed25519";
 
 // https://datatracker.ietf.org/doc/html/rfc6376#section-6.1.2
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 pub async fn retrieve_public_key(
     logger: &slog::Logger,
     resolver: Arc<dyn dns::Lookup>,

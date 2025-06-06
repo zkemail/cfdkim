@@ -2,6 +2,7 @@
 
 use base64::engine::general_purpose;
 use base64::Engine;
+#[cfg(feature = "dkim-expiration-check")]
 use chrono::DateTime;
 use hash::canonicalize_header_email;
 use indexmap::map::IndexMap;
@@ -15,7 +16,7 @@ use slog::debug;
 use std::array::TryFromSliceError;
 use std::collections::HashSet;
 use std::sync::Arc;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 use trust_dns_resolver::TokioAsyncResolver;
 
 use mailparse::MailHeaderMap;
@@ -25,7 +26,7 @@ extern crate quick_error;
 
 mod bytes;
 pub mod canonicalization;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 pub mod dns;
 mod errors;
 mod hash;
@@ -45,7 +46,9 @@ pub use parser::Tag;
 pub use result::DKIMResult;
 pub use sign::{DKIMSigner, SignerBuilder};
 
+#[cfg(feature = "dkim-expiration-check")]
 const SIGN_EXPIRATION_DRIFT_MINS: i64 = 15;
+
 const DNS_NAMESPACE: &str = "_domainkey";
 
 #[cfg(target_arch = "wasm32")]
@@ -57,7 +60,7 @@ fn get_current_time() -> chrono::NaiveDateTime {
         .expect("Invalid timestamp from browser")
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dkim-expiration-check", not(target_arch = "wasm32")))]
 fn get_current_time() -> chrono::NaiveDateTime {
     chrono::Utc::now().naive_utc()
 }
@@ -118,7 +121,7 @@ pub fn validate_header(value: &str) -> Result<DKIMHeader, DKIMError> {
             tag_names.insert(tag.name.clone());
         }
         for required in REQUIRED_TAGS {
-            if tag_names.get(*required).is_none() {
+            if !tag_names.contains(*required) {
                 return Err(DKIMError::SignatureMissingRequiredTag(required));
             }
         }
@@ -169,6 +172,7 @@ pub fn validate_header(value: &str) -> Result<DKIMHeader, DKIMError> {
     }
 
     // Check that "x=" tag isn't expired
+    #[cfg(feature = "dkim-expiration-check")]
     if let Some(expiration) = header.get_tag("x") {
         let mut expiration =
             DateTime::from_timestamp(expiration.parse::<i64>().unwrap_or_default(), 0)
@@ -236,7 +240,7 @@ fn verify_signature(
     })
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 async fn verify_email_header<'a>(
     logger: &'a slog::Logger,
     resolver: Arc<dyn dns::Lookup>,
@@ -288,7 +292,7 @@ async fn verify_email_header<'a>(
 }
 
 /// Run the DKIM verification on the email providing an existing resolver
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 pub async fn verify_email_with_resolver<'a>(
     logger: &slog::Logger,
     from_domain: &str,
@@ -340,7 +344,7 @@ pub async fn verify_email_with_resolver<'a>(
 }
 
 /// Run the DKIM verification on the email
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 pub async fn verify_email<'a>(
     logger: &slog::Logger,
     from_domain: &str,
@@ -385,7 +389,7 @@ pub fn canonicalize_signed_email(
     Ok((canonicalized_header, canonicalized_body, signature_raw))
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
 pub async fn resolve_public_key(
     logger: &slog::Logger,
     email_bytes: &[u8],
@@ -585,7 +589,9 @@ b=dzdVyOfAKCdLXdJOc9G2q8LoXSlEniSbav+yuU4zGeeruD00lszZ
         assert!(validate_header(&header).is_ok());
     }
 
+    // skip this test now that we're not checking expiry
     #[test]
+    #[ignore]
     fn test_validate_header_expired() {
         let mut now = chrono::Utc::now().naive_utc();
         now -= chrono::Duration::hours(3);

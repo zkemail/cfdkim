@@ -165,13 +165,13 @@ impl<'a> DKIMSigner<'a> {
                 hash::HashAlgo::RsaSha256 => {
                     let scheme = Pkcs1v15Sign::new::<rsa::sha2::Sha256>();
                     scheme
-                        .sign::<DummyRng>(None, &private_key, &header_hash)
+                        .sign::<DummyRng>(None, private_key, &header_hash)
                         .map_err(|err| DKIMError::FailedToSign(err.to_string()))?
                 }
                 hash::HashAlgo::RsaSha1 => {
                     let scheme = Pkcs1v15Sign::new::<rsa::sha2::Sha256>();
                     scheme
-                        .sign::<DummyRng>(None, &private_key, &header_hash)
+                        .sign::<DummyRng>(None, private_key, &header_hash)
                         .map_err(|err| DKIMError::FailedToSign(err.to_string()))?
                 }
                 hash => return Err(DKIMError::UnsupportedHashAlgorithm(format!("{:?}", hash))),
