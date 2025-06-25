@@ -19,16 +19,8 @@ pub enum HashAlgo {
 }
 
 /// Get the body part of an email
-///
-/// Normalizes line endings to CRLF before body extraction. DKIM signatures are created
-/// with CRLF line endings per RFC 6376, but email files saved on Unix systems often
-/// convert to LF-only endings, causing verification failures due to byte sequence mismatch.
 pub(crate) fn get_body<'a>(email: &'a mailparse::ParsedMail<'a>) -> Result<Vec<u8>, DKIMError> {
-    let normalized_email = String::from_utf8(email.raw_bytes.to_vec())
-        .map_err(|e| DKIMError::SignatureSyntaxError(format!("invalid UTF-8: {}", e)))?
-        .replace("\r\n", "\n") // Handle mixed line endings
-        .replace("\n", "\r\n"); // Ensure CRLF per DKIM standard
-    Ok(bytes::get_all_after(normalized_email.as_bytes(), b"\r\n\r\n").to_vec())
+    Ok(bytes::get_all_after(email.raw_bytes, b"\r\n\r\n").to_vec())
 }
 
 fn hash_sha1<T: AsRef<[u8]>>(data: T) -> Vec<u8> {

@@ -715,6 +715,12 @@ pub fn verify_email_with_key<'a>(
     public_key: DkimPublicKey,
     ignore_body_hash: bool,
 ) -> Result<DKIMResult, DKIMError> {
+    let normalized_bytes = String::from_utf8_lossy(email.raw_bytes)
+        .replace("\r\n", "\n")
+        .replace("\n", "\r\n");
+    let email = mailparse::parse_mail(normalized_bytes.as_bytes())
+        .map_err(|err| DKIMError::SignatureSyntaxError(err.to_string()))?;
+
     let mut last_error = None;
 
     for h in email.headers.get_all_headers(HEADER) {
@@ -747,7 +753,7 @@ pub fn verify_email_with_key<'a>(
             &dkim_header.get_required_tag("h"),
             hash_algo.clone(),
             &dkim_header,
-            email,
+            &email,
         )?;
 
         if !ignore_body_hash {
@@ -756,7 +762,7 @@ pub fn verify_email_with_key<'a>(
                 body_canon_type.clone(),
                 dkim_header.get_tag("l"),
                 hash_algo.clone(),
-                email,
+                &email,
             )?;
 
             if header_body_hash != computed_body_hash {

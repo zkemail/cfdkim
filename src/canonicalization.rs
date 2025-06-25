@@ -198,7 +198,6 @@ fn canonicalize_header_value_relaxed(value: &[u8]) -> Vec<u8> {
     let mut value = value.to_vec();
     bytes::replace(&mut value, '\t', ' ');
     value = bytes::replace_slice(&value, b"\r\n", b"");
-    value = bytes::replace_slice(&value, b"\n", b"");
 
     while value.ends_with(b" ") {
         value.remove(value.len() - 1);
