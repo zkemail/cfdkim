@@ -182,24 +182,31 @@ mod tests {
     }
 
     #[test]
-    fn body_length_limited_signature_is_not_returned_with_the_body() {
+    fn body_length_limited_signature_returns_only_the_signed_body() {
         // "Hello\r\n" is signed (l=7); the appended line is not covered by the signature.
         let signed = sign_with_body_length(&base_email(), 7);
         let extended = format!("{}Unsigned line\r\n", signed);
 
-        // Header-only use: the signature itself is valid.
+        for ignore_body_hash in [false, true] {
+            let (_, body, _) = canonicalize_verified_signed_email(
+                &logger(),
+                extended.as_bytes(),
+                DOMAIN,
+                rsa_public(),
+                ignore_body_hash,
+            )
+            .unwrap();
+            assert_eq!(body, b"Hello\r\n".to_vec());
+        }
+        // The first-signature helper returns the unsigned line too.
+        let (_, body, _) = canonicalize_signed_email(extended.as_bytes()).unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("Unsigned line"));
+
+        // Changing the signed prefix still fails the body hash.
+        let tampered = extended.replacen("Hello\r\n", "Jello\r\n", 1);
         assert!(canonicalize_verified_signed_email(
             &logger(),
-            extended.as_bytes(),
-            DOMAIN,
-            rsa_public(),
-            true
-        )
-        .is_ok());
-        // Body use: refused, since the returned body would include the unsigned line.
-        assert!(canonicalize_verified_signed_email(
-            &logger(),
-            extended.as_bytes(),
+            tampered.as_bytes(),
             DOMAIN,
             rsa_public(),
             false

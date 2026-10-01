@@ -405,10 +405,8 @@ pub fn canonicalize_signed_email(
 /// selectors, body hash index) is not the data the verified signature covers. Use this
 /// function whenever the canonicalized output feeds anything that relies on the DKIM check.
 ///
-/// REASON: signatures with an `l=` body-length tag are skipped unless `ignore_body_hash` is
-/// set. With `l=`, bytes after the first `l` canonicalized body bytes are not covered by the
-/// signature, but the returned body is the whole body, so a caller would treat unsigned
-/// content as signed.
+/// With an `l=` body-length tag, the returned body is the signed prefix only (the first `l`
+/// bytes of the `c=` body canonicalization), never the unsigned remainder.
 pub fn canonicalize_verified_signed_email(
     logger: &slog::Logger,
     email_bytes: &[u8],
@@ -440,19 +438,13 @@ pub fn canonicalize_verified_signed_email(
         {
             continue;
         }
-        if !ignore_body_hash && dkim_header.get_tag("l").is_some() {
-            debug!(logger, "skipping signature with l= tag");
-            last_error = DKIMError::UnacceptableSignatureHeader;
-            continue;
-        }
-
         let (header_canon_type, body_canon_type) =
             parser::parse_canonicalization(dkim_header.get_tag("c"))?;
         let hash_algo = parser::parse_hash_algo(&dkim_header.get_required_tag("a"))?;
 
         if !ignore_body_hash {
             let computed_body_hash = hash::compute_body_hash(
-                body_canon_type,
+                body_canon_type.clone(),
                 dkim_header.get_tag("l"),
                 hash_algo.clone(),
                 &email,
@@ -507,7 +499,27 @@ pub fn canonicalize_verified_signed_email(
             &dkim_header,
             &email,
         )?;
-        let canonicalized_body = get_canonicalized_body(normalized_bytes.as_bytes());
+        // REASON: with an `l=` body-length tag only the first `l` bytes of the c= body
+        // canonicalization are signed (mailing lists and some ESPs use it so footers can be
+        // appended). Return exactly those signed bytes, so they hash to `bh=` and appended,
+        // unsigned content is never handed out as part of the signed body. Without `l=` the
+        // existing get_canonicalized_body output is kept so current callers see no change.
+        let canonicalized_body = match dkim_header.get_tag("l") {
+            Some(length) => {
+                let length = length.parse::<usize>().map_err(|err| {
+                    DKIMError::SignatureSyntaxError(format!("invalid length: {}", err))
+                })?;
+                let body = hash::get_body(&email)?;
+                let mut body = if body_canon_type == canonicalization::Type::Simple {
+                    canonicalize_body_simple(&body)
+                } else {
+                    canonicalize_body_relaxed(&body)
+                };
+                body.truncate(length);
+                body
+            }
+            None => get_canonicalized_body(normalized_bytes.as_bytes()),
+        };
         return Ok((canonicalized_header, canonicalized_body, signature));
     }
 
