@@ -37,6 +37,8 @@ mod result;
 #[cfg(test)]
 mod roundtrip_test;
 mod sign;
+#[cfg(test)]
+mod verified_canonicalization_test;
 
 use crate::canonicalization::*;
 pub use errors::DKIMError;
@@ -65,7 +67,7 @@ fn get_current_time() -> chrono::NaiveDateTime {
     chrono::Utc::now().naive_utc()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DkimPublicKey {
     Rsa(RsaPublicKey),
     Ed25519(ed25519_dalek::VerifyingKey),
@@ -387,6 +389,129 @@ pub fn canonicalize_signed_email(
 
     // Ok((canonicalized_header, Vec::new(), signature_raw))
     Ok((canonicalized_header, canonicalized_body, signature_raw))
+}
+
+/// Verify `email_bytes` with `public_key` and canonicalize **the DKIM-Signature that verified**.
+///
+/// Returns `(canonicalized_header, canonicalized_body, signature bytes)` like
+/// [`canonicalize_signed_email`], but for the signature whose `d=` is `signing_domain` and that
+/// actually verifies under `public_key` (every such signature is tried, in header order).
+///
+/// NOTE: [`canonicalize_signed_email`] always canonicalizes the *first* DKIM-Signature header,
+/// while [`verify_email_with_key`] verifies the first one whose `d=` matches. When a message
+/// carries several signatures (ESP + author domain, key-rotation double signing, forwarded
+/// mail) the two disagree: callers then pair the verified key with a different signature's
+/// header bytes and `h=` list, so any header data read from that output (regex matches,
+/// selectors, body hash index) is not the data the verified signature covers. Use this
+/// function whenever the canonicalized output feeds anything that relies on the DKIM check.
+///
+/// REASON: signatures with an `l=` body-length tag are skipped unless `ignore_body_hash` is
+/// set. With `l=`, bytes after the first `l` canonicalized body bytes are not covered by the
+/// signature, but the returned body is the whole body, so a caller would treat unsigned
+/// content as signed.
+pub fn canonicalize_verified_signed_email(
+    logger: &slog::Logger,
+    email_bytes: &[u8],
+    signing_domain: &str,
+    public_key: DkimPublicKey,
+    ignore_body_hash: bool,
+) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), DKIMError> {
+    // NOTE: same line-ending normalization as `verify_email_with_key`, so the bytes that are
+    // canonicalized here are exactly the bytes whose signature was checked.
+    let normalized_bytes = String::from_utf8_lossy(email_bytes)
+        .replace("\r\n", "\n")
+        .replace('\n', "\r\n");
+    let email = mailparse::parse_mail(normalized_bytes.as_bytes())
+        .map_err(|err| DKIMError::SignatureSyntaxError(err.to_string()))?;
+
+    let mut last_error = DKIMError::NoKeyForSignature;
+    for h in email.headers.get_all_headers(HEADER) {
+        let value = String::from_utf8_lossy(h.get_value_raw());
+        let dkim_header = match validate_header(&value) {
+            Ok(v) => v,
+            Err(err) => {
+                last_error = err;
+                continue;
+            }
+        };
+        if !dkim_header
+            .get_required_tag("d")
+            .eq_ignore_ascii_case(signing_domain)
+        {
+            continue;
+        }
+        if !ignore_body_hash && dkim_header.get_tag("l").is_some() {
+            debug!(logger, "skipping signature with l= tag");
+            last_error = DKIMError::UnacceptableSignatureHeader;
+            continue;
+        }
+
+        let (header_canon_type, body_canon_type) =
+            parser::parse_canonicalization(dkim_header.get_tag("c"))?;
+        let hash_algo = parser::parse_hash_algo(&dkim_header.get_required_tag("a"))?;
+
+        if !ignore_body_hash {
+            let computed_body_hash = hash::compute_body_hash(
+                body_canon_type,
+                dkim_header.get_tag("l"),
+                hash_algo.clone(),
+                &email,
+            )?;
+            if dkim_header.get_required_tag("bh") != computed_body_hash {
+                last_error = DKIMError::BodyHashDidNotVerify;
+                continue;
+            }
+        }
+
+        let computed_header_hash = hash::compute_headers_hash(
+            logger,
+            header_canon_type.clone(),
+            &dkim_header.get_required_tag("h"),
+            hash_algo.clone(),
+            &dkim_header,
+            &email,
+        )?;
+        let signature = match general_purpose::STANDARD.decode(dkim_header.get_required_tag("b"))
+        {
+            Ok(s) => s,
+            Err(err) => {
+                last_error = DKIMError::SignatureSyntaxError(format!(
+                    "failed to decode signature: {}",
+                    err
+                ));
+                continue;
+            }
+        };
+        // NOTE: a key/algorithm mismatch (e.g. an ed25519 signature checked with an RSA key)
+        // is an Err from verify_signature; it only means "not this signature", so keep looking.
+        match verify_signature(
+            hash_algo,
+            computed_header_hash,
+            signature.clone(),
+            public_key.clone(),
+        ) {
+            Ok(true) => {}
+            Ok(false) => {
+                last_error = DKIMError::SignatureDidNotVerify;
+                continue;
+            }
+            Err(err) => {
+                last_error = err;
+                continue;
+            }
+        }
+
+        let canonicalized_header = canonicalize_header_email(
+            header_canon_type,
+            &dkim_header.get_required_tag("h"),
+            &dkim_header,
+            &email,
+        )?;
+        let canonicalized_body = get_canonicalized_body(normalized_bytes.as_bytes());
+        return Ok((canonicalized_header, canonicalized_body, signature));
+    }
+
+    Err(last_error)
 }
 
 #[cfg(all(feature = "dns", not(target_arch = "wasm32")))]
